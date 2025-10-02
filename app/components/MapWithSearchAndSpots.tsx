@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet"; // useMapEvents をインポート
 import "leaflet/dist/leaflet.css";
 import "leaflet-defaulticon-compatibility";
 import "leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css";
@@ -11,6 +11,26 @@ function Recenter({ position }: { position: [number, number] }) {
     return null;
 }
 
+// ▼▼▼【新規追加】クリックイベントを処理するためのコンポーネント ▼▼▼
+function MapClickHandler({
+    setPosition,
+    fetchSpots,
+}: {
+    setPosition: (position: [number, number]) => void;
+    fetchSpots: (lat: number, lon: number) => void;
+}) {
+    useMapEvents({
+        click(e) {
+            const { lat, lng } = e.latlng;
+            console.log("クリック座標:", lat, lng); // デバッグ用
+            setPosition([lat, lng]);
+            fetchSpots(lat, lng);
+        },
+    });
+    return null;
+}
+// ▲▲▲ ここまで新規追加 ▲▲▲
+
 export default function MapWithSearchAndSpots() {
     const [position, setPosition] = useState<[number, number]>([35.6812, 139.7671]); // 東京駅
     const [query, setQuery] = useState("");
@@ -18,15 +38,15 @@ export default function MapWithSearchAndSpots() {
         { lat: number; lon: number; name: string; type: string }[]
     >([]);
 
-    // Overpass API呼び出し
     async function fetchSpots(lat: number, lon: number) {
+        // ... (この関数の中身は変更なし)
         const query = `
-      [out:json];
-      node(around:1000,${lat},${lon})["tourism"];
-      out;
-    `;
+    [out:json];
+    node(around:1000,${lat},${lon})["tourism"];
+    out;
+  `;
         const url =
-            "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+            "https://overpass.kumi.systems/api/interpreter?data=" + encodeURIComponent(query);
 
         const res = await fetch(url);
         const text = await res.text();
@@ -40,14 +60,14 @@ export default function MapWithSearchAndSpots() {
                 type: el.tags?.tourism || "unknown",
             }));
             setSpots(formatted);
-        } catch (err) {
-            console.error("Overpass API error", err);
-            console.error("Overpass returned non-JSON:", text.slice(0, 200));
+        } catch {
+            console.error("⚠ Overpass API returned non-JSON:", text.slice(0, 200));
+            alert("Overpass APIがエラーを返しました。混雑中かもしれません。");
         }
     }
 
-    // 検索ハンドラ（Nominatimで座標取得）
     async function handleSearch() {
+        // ... (この関数の中身は変更なし)
         const res = await fetch(
             `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
         );
@@ -57,12 +77,10 @@ export default function MapWithSearchAndSpots() {
             const lon = parseFloat(data[0].lon);
             setPosition([lat, lon]);
             setQuery("");
-            // 拠点更新後にスポット検索
             fetchSpots(lat, lon);
         }
     }
 
-    // 初期表示でもスポット取得（東京駅周辺）
     useEffect(() => {
         fetchSpots(position[0], position[1]);
     }, []);
@@ -70,6 +88,7 @@ export default function MapWithSearchAndSpots() {
     return (
         <div>
             <div className="mb-2">
+                {/* ... (検索フォーム部分は変更なし) ... */}
                 <input
                     className="border p-2"
                     value={query}
@@ -82,24 +101,35 @@ export default function MapWithSearchAndSpots() {
                 >
                     検索
                 </button>
+                <p className="text-sm text-gray-600 mt-1">
+                    💡 地図をクリックしても拠点を変更できます
+                </p>
             </div>
-
             <MapContainer
                 center={position}
                 zoom={14}
                 style={{ height: "400px", width: "100%" }}
+            // ▼▼▼【削除】この eventHandlers props を削除します ▼▼▼
+            /*
+            eventHandlers={{
+                click: (e: any) => {
+                    const lat = e.latlng.lat;
+                    const lon = e.latlng.lng;
+                    console.log("クリック座標:", lat, lon); // デバッグ用
+                    setPosition([lat, lon]);
+                    fetchSpots(lat, lon);
+                },
+            }}
+            */
+            // ▲▲▲ ここまで削除 ▲▲▲
             >
                 <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/">OSM</a>'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-
-                {/* 基点マーカー */}
                 <Marker position={position}>
-                    <Popup>基点</Popup>
+                    <Popup>基点（クリックor検索で更新）</Popup>
                 </Marker>
-
-                {/* 観光スポット */}
                 {spots.map((s, i) => (
                     <Marker key={i} position={[s.lat, s.lon]}>
                         <Popup>
@@ -108,8 +138,9 @@ export default function MapWithSearchAndSpots() {
                         </Popup>
                     </Marker>
                 ))}
-
                 <Recenter position={position} />
+                {/* ▼▼▼【追加】MapContainer の子として新しいコンポーネントを呼び出す ▼▼▼ */}
+                <MapClickHandler setPosition={setPosition} fetchSpots={fetchSpots} />
             </MapContainer>
         </div>
     );
